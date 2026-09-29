@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CityTrace — Unified Vehicle Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.1.0/maplibre-gl.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.1.0/maplibre-gl.min.js"></script>
+<style>
+:root{
+  --bg:#FFFFFF; --panel:#FFFFFF; --panel2:#F6F7F9; --line:#E4E7EC;
+  --text:#111318; --sub:#5B6472; --dim:#8A93A3;
+  --accent:#111318; --accent2:#2563EB;
+  --amber:#B45309; --amber-bg:#FEF3C7; --amber-line:#FDE68A;
+  --red:#B91C1C; --red-bg:#FEE2E2; --red-line:#FCA5A5;
+  --green:#15803D;
+  font-family:'Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);}
+body{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);}
+.mono{font-family:'JetBrains Mono',monospace;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px;}
+
+/* real maplibre-gl.css is loaded above now that this is a locally-run file, not a published
+   artifact page (published pages can't fetch external CSS/tiles — see working notes). This
+   local file loads real map tiles and the official stylesheet. */
+
+.veh-marker{width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--accent2);box-shadow:0 0 0 5px rgba(37,99,235,0.22);}
+.play-controls{display:flex;align-items:center;gap:8px;}
+.btn.ghost2{background:#fff;color:var(--sub);border:1px solid var(--line);}
+.btn.ghost2:hover{background:var(--panel2);filter:none;}
+.btn:disabled{opacity:.5;cursor:not-allowed;filter:none;}
+.progress-wrap{margin-top:10px;}
+.progress-bg{height:5px;background:var(--panel2);border-radius:3px;overflow:hidden;border:1px solid var(--line);}
+.progress-fill{height:100%;width:0%;background:var(--accent2);border-radius:3px;transition:width .1s linear;}
+.progress-label{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dim);margin-top:5px;font-family:'JetBrains Mono',monospace;}
+.trail li.active{background:var(--panel2);border-radius:6px;padding-left:6px;}
+.trail li.active .c{color:var(--accent2);}
+
+.app{display:flex;height:100vh;height:100dvh;}
+.sidebar{width:220px;flex:none;background:var(--panel2);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:18px 12px;overflow-y:auto;}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 20px;}
+.brand-mark{width:34px;height:34px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:15px;}
+.brand-name{font-weight:700;font-size:15px;letter-spacing:.2px;}
+.brand-sub{font-size:11px;color:var(--dim);}
+.nav-btn{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:8px;background:none;border:none;color:var(--sub);font-size:13.5px;font-weight:500;text-align:left;cursor:pointer;margin-bottom:2px;}
+.nav-btn:hover{background:#EDEFF3;color:var(--text);}
+.nav-btn.active{background:var(--accent);color:#fff;}
+.nav-icon{width:18px;text-align:center;}
+.sidebar-foot{margin-top:auto;padding:10px 8px;font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding-top:14px;}
+
+.main{flex:1;display:flex;flex-direction:column;min-width:0;}
+.topbar{min-height:56px;flex:none;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:#fff;flex-wrap:wrap;gap:8px;}
+.topbar h1{font-size:15px;font-weight:700;margin:0;}
+.topbar .desc{font-size:12px;color:var(--dim);margin-top:1px;}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--sub);background:var(--panel2);border:1px solid var(--line);padding:5px 10px;border-radius:100px;white-space:nowrap;}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--green);}
+.content{flex:1;overflow:auto;padding:20px;}
+.view{display:none;}
+.view.active{display:block;}
+
+.grid{display:grid;gap:14px;}
+.g2{grid-template-columns:1.3fr 1fr;}
+.g3{grid-template-columns:repeat(3,1fr);}
+.g4{grid-template-columns:repeat(4,1fr);}
+@media(max-width:900px){.g2,.g3,.g4{grid-template-columns:1fr;}}
+
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto;}
+.card h3{margin:0 0 4px;font-size:13px;font-weight:700;}
+.card .hint{font-size:11.5px;color:var(--dim);margin-bottom:12px;}
+.stat{font-size:26px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--text);}
+.stat-label{font-size:11.5px;color:var(--sub);margin-top:2px;}
+.stat-delta{font-size:11px;color:var(--green);margin-top:6px;}
+
+.map-wrap{position:relative;height:400px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:#fff;}
+.map-zoom{position:absolute;right:10px;bottom:10px;z-index:5;display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+.map-zoom button{width:32px;height:32px;border:none;background:#fff;font-size:16px;cursor:pointer;color:var(--text);}
+.map-zoom button:first-child{border-bottom:1px solid var(--line);}
+.map-zoom button:hover{background:var(--panel2);}
+.map-info{margin-top:10px;font-size:12px;color:var(--sub);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:8px 10px;min-height:16px;}
+.map-info b{color:var(--text);}
+
+.search-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.search-row input{flex:1;min-width:160px;background:#fff;border:1px solid var(--line);color:var(--text);padding:9px 12px;border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:13px;}
+.btn{background:var(--accent);color:#fff;border:none;padding:9px 16px;border-radius:7px;font-weight:700;font-size:12.5px;cursor:pointer;}
+.btn:hover{filter:brightness(1.2);}
+
+.trail{list-style:none;margin:0;padding:0;}
+.trail li{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12.5px;}
+.trail li:last-child{border:none;}
+.trail .t{color:var(--dim);font-family:'JetBrains Mono',monospace;width:52px;flex:none;}
+.trail .c{font-weight:600;}
+
+.alert-row{display:flex;gap:12px;padding:12px;border-radius:8px;background:var(--red-bg);border:1px solid var(--red-line);margin-bottom:10px;}
+.alert-row.warn{background:var(--amber-bg);border-color:var(--amber-line);}
+.alert-icon{font-size:18px;}
+.alert-row b{font-size:13px;color:var(--text);}
+.alert-row p{margin:3px 0 0;font-size:12px;color:var(--sub);line-height:1.5;}
+.tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px;margin-right:6px;letter-spacing:.3px;}
+.tag.red{background:#fff;color:var(--red);border:1px solid var(--red-line);}
+.tag.amber{background:#fff;color:var(--amber);border:1px solid var(--amber-line);}
+
+.bar-row{margin-bottom:14px;}
+.bar-row-top{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px;gap:10px;}
+.bar-row-top b{font-family:'JetBrains Mono',monospace;white-space:nowrap;}
+.bar-bg{height:8px;background:var(--panel2);border-radius:5px;overflow:hidden;}
+.bar-fill{height:100%;border-radius:5px;background:var(--accent);}
+
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:520px;}
+th{text-align:left;color:var(--dim);font-weight:600;font-size:11px;padding:8px 10px;border-bottom:1px solid var(--line);}
+td{padding:9px 10px;border-bottom:1px solid var(--line);color:var(--sub);}
+td.strong{color:var(--text);font-family:'JetBrains Mono',monospace;}
+
+.toggle{display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:100px;padding:3px;}
+.toggle button{border:none;background:none;color:var(--dim);font-size:12px;font-weight:600;padding:7px 16px;border-radius:100px;cursor:pointer;}
+.toggle button.on{background:var(--accent);color:#fff;}
+
+.sim-btn{display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);color:var(--sub);padding:10px 12px;border-radius:7px;font-size:12.5px;margin-bottom:8px;cursor:pointer;}
+.sim-btn.on{border-color:var(--accent);color:var(--text);background:var(--panel2);font-weight:600;}
+
+.audit-badge{font-size:10.5px;padding:2px 8px;border-radius:100px;background:var(--panel2);color:var(--text);font-weight:600;border:1px solid var(--line);}
+.small{font-size:11.5px;color:var(--dim);}
+.flex-between{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">CT</div>
+      <div><div class="brand-name">CityTrace</div><div class="brand-sub">MobilityX · SIH 26127</div></div>
+    </div>
+    <button class="nav-btn active" data-view="overview"><span class="nav-icon">◈</span>Overview</button>
+    <button class="nav-btn" data-view="trajectory"><span class="nav-icon">⌖</span>Trajectory Search</button>
+    <button class="nav-btn" data-view="ghost"><span class="nav-icon">⚠</span>Ghost Plate Alerts</button>
+    <button class="nav-btn" data-view="reid"><span class="nav-icon">≋</span>Explainable Re-ID</button>
+    <button class="nav-btn" data-view="privacy"><span class="nav-icon">⚿</span>Privacy &amp; Audit</button>
+    <button class="nav-btn" data-view="whatif"><span class="nav-icon">⇄</span>What-If Simulator</button>
+    <div class="sidebar-foot">Pune Traffic Command · Demo build<br>Mock data — illustrative only</div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div><h1 id="topTitle">Overview</h1><div class="desc" id="topDesc">City-wide traffic intelligence, live</div></div>
+      <span class="pill"><span class="dot"></span> <span id="clock">--:--:--</span> · Pune ITMS Node</span>
+    </div>
+
+    <div class="content">
+
+      <div class="view active" id="v-overview">
+        <div class="grid g4" style="margin-bottom:14px;">
+          <div class="card"><div class="stat">1.24M</div><div class="stat-label">Detections today</div><div class="stat-delta">↑ 6.2% vs yesterday</div></div>
+          <div class="card"><div class="stat">91.7%</div><div class="stat-label">OCR accuracy (24h avg)</div><div class="stat-delta">Target &gt;90%</div></div>
+          <div class="card"><div class="stat" style="color:var(--red)">7</div><div class="stat-label">Ghost plate alerts open</div><div class="stat-delta" style="color:var(--red)">2 high confidence</div></div>
+          <div class="card"><div class="stat">42</div><div class="stat-label">Cameras online / 46</div><div class="stat-delta" style="color:var(--sub)">4 offline — Hinjewadi Ph2</div></div>
+        </div>
+        <div class="grid g2">
+          <div class="card">
+            <h3>City camera network</h3>
+            <div class="hint">Live node status across Pune ANPR network — drag to pan, scroll or use +/− to zoom</div>
+            <div class="map-wrap"><div id="mapOverview" style="width:100%;height:100%;"></div><div class="map-zoom"><button onclick="mapOv.zoomIn()">+</button><button onclick="mapOv.zoomOut()">−</button></div></div>
+            <div class="map-info" id="ovInfo">Click a camera node for details.</div>
+          </div>
+          <div class="card">
+            <h3>Recent flagged events</h3>
+            <div class="hint">Auto-generated from trajectory + integrity checks</div>
+            <div class="alert-row"><div class="alert-icon">🛑</div><div><span class="tag red">GHOST PLATE</span><b>MH12 DE 4521</b><p>Seen at FC Road &amp; Hinjewadi 6 min apart — 19 km, physically impossible.</p></div></div>
+            <div class="alert-row warn"><div class="alert-icon">⚠</div><div><span class="tag amber">ANOMALY</span><b>MH14 GJ 8830</b><p>Deviated from 30-day historical route pattern near Kothrud Depot.</p></div></div>
+            <div class="alert-row"><div class="alert-icon">🛑</div><div><span class="tag red">BLACKLIST</span><b>MH12 XX 0091</b><p>Matched blacklist register — flagged at Shivajinagar Camera 3.</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" id="v-trajectory">
+        <div class="grid g2">
+          <div class="card">
+            <h3>Plate → Journey</h3>
+            <div class="hint">Search a plate to reconstruct its city-wide path</div>
+            <div class="search-row">
+              <input id="plateInput" class="mono" value="MH12 AB 1234">
+              <button class="btn" onclick="renderTrajectory()">Trace</button>
+              <div class="play-controls">
+                <button class="btn ghost2" id="playBtn">▶ Play</button>
+              </div>
+            </div>
+            <div class="map-wrap"><div id="map" style="width:100%;height:100%;"></div><div class="map-zoom"><button onclick="mapTraj.zoomIn()">+</button><button onclick="mapTraj.zoomOut()">−</button></div></div>
+            <div class="progress-wrap">
+              <div class="progress-bg"><div class="progress-fill" id="progressFill"></div></div>
+              <div class="progress-label"><span id="progressStatus">Ready</span><span id="progressPct">0%</span></div>
+            </div>
+            <div class="map-info" id="trajInfo">Click a stop marker for camera + timestamp.</div>
+          </div>
+          <div class="card">
+            <h3>Reconstructed timeline</h3>
+            <div class="hint" id="trailHint">6 camera hits · 38 min span · 14.2 km travelled</div>
+            <ul class="trail" id="trailList"></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" id="v-ghost">
+        <div class="card" style="margin-bottom:14px;">
+          <h3>Identity Integrity Engine</h3>
+          <div class="hint">Flags impossible travel times and appearance mismatches — the same plate can't be two places physics won't allow.</div>
+        </div>
+        <div class="alert-row">
+          <div class="alert-icon">🛑</div>
+          <div>
+            <span class="tag red">HIGH CONFIDENCE CLONE</span>
+            <b>MH12 DE 4521</b>
+            <p><b>Camera A:</b> FC Road, 14:02:11 → <b>Camera B:</b> Hinjewadi Phase 1, 14:08:47</p>
+            <p>Straight-line distance 19.1 km in 6m 36s → requires 173 km/h sustained. Flagged as physically impossible; likely a cloned or misread plate. Vehicle body colour also differs (white vs silver in stored record).</p>
+          </div>
+        </div>
+        <div class="alert-row">
+          <div class="alert-icon">🛑</div>
+          <div>
+            <span class="tag red">HIGH CONFIDENCE CLONE</span>
+            <b>MH14 BR 7790</b>
+            <p><b>Camera A:</b> Kothrud Depot, 09:14:02 → <b>Camera B:</b> Viman Nagar, 09:19:55</p>
+            <p>16.4 km in 5m 53s → requires 167 km/h. Vehicle class mismatch: registered as two-wheeler, detected as SUV at second sighting.</p>
+          </div>
+        </div>
+        <div class="alert-row warn">
+          <div class="alert-icon">⚠</div>
+          <div>
+            <span class="tag amber">NEEDS REVIEW</span>
+            <b>MH12 CX 3316</b>
+            <p><b>Camera A:</b> Swargate, 18:40:10 → <b>Camera B:</b> Aundh, 18:58:02</p>
+            <p>10.8 km in 17m 52s → 36 km/h, within plausible range for traffic hours. Flagged only because OCR confidence on second read was 81% — held for manual confirmation, not auto-classified as clone.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" id="v-reid">
+        <div class="grid g2">
+          <div class="card">
+            <h3>Match reasoning — MH12 AB 1234</h3>
+            <div class="hint">FC Road Cam 2 (14:02) ↔ Kothrud Cam 5 (14:19). Every component of the confidence score, shown separately.</div>
+            <div class="bar-row"><div class="bar-row-top"><span>Plate text similarity</span><b>97%</b></div><div class="bar-bg"><div class="bar-fill" style="width:97%"></div></div></div>
+            <div class="bar-row"><div class="bar-row-top"><span>Appearance embedding match</span><b>91%</b></div><div class="bar-bg"><div class="bar-fill" style="width:91%"></div></div></div>
+            <div class="bar-row"><div class="bar-row-top"><span>Travel time plausibility</span><b>96%</b></div><div class="bar-bg"><div class="bar-fill" style="width:96%"></div></div></div>
+            <div class="bar-row"><div class="bar-row-top"><span>Direction / route consistency</span><b>89%</b></div><div class="bar-bg"><div class="bar-fill" style="width:89%"></div></div></div>
+            <div class="flex-between" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line);">
+              <div><div class="small">Combined confidence</div><div class="stat">94%</div></div>
+              <button class="btn" onclick="alert('Demo export — a real build would generate a signed PDF with all four components, frame captures, and camera metadata for investigation use.')">Export evidence report</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Why this matters</h3>
+            <p class="small" style="line-height:1.7;font-size:12.5px;color:var(--sub);">
+              A bare "94% confidence" number can't be cross-examined. Officers and courts need to know which signals agreed and which were weaker, so a low-scoring component (here, direction consistency at 89%) can be manually checked before a match is acted on.
+              <br><br>
+              This breakdown is generated the same way for every match in the system — nothing is scored differently for the demo.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" id="v-privacy">
+        <div class="grid g3" style="margin-bottom:14px;">
+          <div class="card">
+            <h3>Retention window</h3>
+            <div class="hint">Raw frames auto-purge after policy window (DPDP-aligned)</div>
+            <div class="stat">17<span style="font-size:14px;color:var(--dim);"> / 30 days</span></div>
+            <div class="stat-label">until next scheduled purge batch</div>
+          </div>
+          <div class="card">
+            <h3>Bystander redaction</h3>
+            <div class="hint">Faces &amp; unrelated plates blurred in stored frames</div>
+            <div class="flex-between" style="margin-top:4px;"><span class="small">Auto-blur on ingest</span><span class="audit-badge">ENABLED</span></div>
+          </div>
+          <div class="card">
+            <h3>Access this month</h3>
+            <div class="stat">128</div>
+            <div class="stat-label">plate lookups, all reason-coded</div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Access audit log</h3>
+          <div class="hint">Every query is logged with officer ID and a mandatory reason code — no anonymous browsing.</div>
+          <table>
+            <tr><th>Time</th><th>Officer</th><th>Plate queried</th><th>Reason code</th><th>Status</th></tr>
+            <tr><td class="strong">14:22:05</td><td>Insp. R. Deshmukh</td><td class="strong">MH12 DE 4521</td><td>Clone investigation #4471</td><td>Approved</td></tr>
+            <tr><td class="strong">13:58:41</td><td>SI A. Kulkarni</td><td class="strong">MH14 GJ 8830</td><td>Anomaly review</td><td>Approved</td></tr>
+            <tr><td class="strong">13:40:12</td><td>Insp. P. Nair</td><td class="strong">MH12 XX 0091</td><td>Blacklist match</td><td>Approved</td></tr>
+            <tr><td class="strong">12:15:09</td><td>SI M. Joshi</td><td class="strong">MH12 CX 3316</td><td>— no reason supplied</td><td style="color:var(--red);">Blocked</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="view" id="v-whatif">
+        <div class="grid g2">
+          <div class="card">
+            <h3>Scenario</h3>
+            <div class="hint">Pick an intervention — density redistributes across alternate routes using current O-D flow share.</div>
+            <button class="sim-btn on" data-sim="none" onclick="setSim('none')">Baseline — no change</button>
+            <button class="sim-btn" data-sim="close" onclick="setSim('close')">Close FC Road (12:00–16:00)</button>
+            <button class="sim-btn" data-sim="signal" onclick="setSim('signal')">Add adaptive signal — Kothrud Depot junction</button>
+            <button class="sim-btn" data-sim="divert" onclick="setSim('divert')">Divert heavy vehicles via Ring Road</button>
+          </div>
+          <div class="card">
+            <h3>Predicted corridor density</h3>
+            <div class="hint" id="simHint">Baseline — current sensor readings</div>
+            <div id="simBars"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+function tick(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-IN',{hour12:false});}
+tick();setInterval(tick,1000);
+
+const titles={overview:['Overview','City-wide traffic intelligence, live'],trajectory:['Trajectory Search','Reconstruct a vehicle\'s journey across the city'],ghost:['Ghost Plate Alerts','Impossible-travel-time & mismatch detection'],reid:['Explainable Re-ID','Every match, broken down into its reasoning'],privacy:['Privacy & Audit','DPDP-aligned retention, redaction and access logging'],whatif:['What-If Simulator','Model interventions before acting on them']};
+document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('v-'+b.dataset.view).classList.add('active');
+  document.getElementById('topTitle').textContent=titles[b.dataset.view][0];
+  document.getElementById('topDesc').textContent=titles[b.dataset.view][1];
+  setTimeout(()=>{ if(window.mapTraj)mapTraj.resize(); if(window.mapOv)mapOv.resize(); },80);
+}));
+
+/* ---- real map tiles ----
+   This file is meant to be opened locally (not published as a claude.ai artifact),
+   so it can load real vector tiles instead of the hand-drawn fallback basemap.
+   OpenFreeMap is free, OSM-based, and needs no API key. Swap MAP_STYLE for a
+   MapTiler/Stadia Maps URL + key later if you want a different look or higher
+   request volume for a public deployment. */
+const MAP_STYLE='https://tiles.openfreemap.org/styles/liberty';
+
+const cameras=[
+ {name:'FC Road Cam 2',lng:73.8478,lat:18.5236},
+ {name:'Shivajinagar Cam 3',lng:73.8467,lat:18.5304},
+ {name:'Kothrud Depot Cam 5',lng:73.8077,lat:18.5074},
+ {name:'Hinjewadi Phase 1',lng:73.7389,lat:18.5912},
+ {name:'Swargate Junction',lng:73.8636,lat:18.5010},
+ {name:'Viman Nagar',lng:73.9143,lat:18.5679},
+ {name:'Aundh Cam 1',lng:73.8079,lat:18.5590},
+ {name:'Hadapsar Cam 4',lng:73.9260,lat:18.5089}
+];
+function addRouteLayer(map){
+  if(map.getSource('route'))return;
+  map.addSource('route-full',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  map.addLayer({id:'route-full',type:'line',source:'route-full',paint:{'line-color':'#2563EB','line-width':3,'line-opacity':0.28,'line-dasharray':[2,1.6]},layout:{'line-cap':'round','line-join':'round'}});
+  map.addSource('route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  map.addLayer({id:'route-line',type:'line',source:'route',paint:{'line-color':'#2563EB','line-width':3.5,'line-opacity':0.9},layout:{'line-cap':'round','line-join':'round'}});
+}
+function fitToCameras(map,pts){
+  let minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
+  pts.forEach(p=>{minLng=Math.min(minLng,p.lng);maxLng=Math.max(maxLng,p.lng);minLat=Math.min(minLat,p.lat);maxLat=Math.max(maxLat,p.lat);});
+  map.fitBounds([[minLng,minLat],[maxLng,maxLat]],{padding:36,duration:0});
+}
+function markerEl(label,color){
+  const el=document.createElement('div');
+  el.style.cssText=`width:${label?22:12}px;height:${label?22:12}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 0 1.5px ${color};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;cursor:pointer;`;
+  if(label)el.textContent=label;
+  return el;
+}
+
+var mapOv=new maplibregl.Map({container:'mapOverview',style:MAP_STYLE,center:[73.845,18.53],zoom:11,attributionControl:{compact:true},dragRotate:false,touchPitch:false});
+new ResizeObserver(()=>mapOv.resize()).observe(document.getElementById('mapOverview'));
+mapOv.on('load',()=>{
+  fitToCameras(mapOv,cameras);
+  cameras.forEach(c=>{
+    const el=markerEl(null,'#111318');
+    el.addEventListener('click',()=>{document.getElementById('ovInfo').innerHTML=`<b>${c.name}</b> · status: online · lat ${c.lat.toFixed(4)}, lng ${c.lng.toFixed(4)}`;});
+    new maplibregl.Marker({element:el}).setLngLat([c.lng,c.lat]).addTo(mapOv);
+  });
+});
+
+var mapTraj=new maplibregl.Map({container:'map',style:MAP_STYLE,center:[73.845,18.53],zoom:11,attributionControl:{compact:true},dragRotate:false,touchPitch:false});
+new ResizeObserver(()=>mapTraj.resize()).observe(document.getElementById('map'));
+mapTraj.on('load',()=>addRouteLayer(mapTraj));
+
+/* Real per-plate trajectories. Coordinates match the actual camera nodes above,
+   so distance/time/speed are computed from real data, not fixed display text. */
+const plateTrajectories={
+ 'MH12AB1234':{flag:'normal',stops:[
+   {t:'14:02',cam:'FC Road Cam 2',lat:18.5236,lng:73.8478},
+   {t:'14:07',cam:'Shivajinagar Cam 3',lat:18.5304,lng:73.8467},
+   {t:'14:15',cam:'Aundh Cam 1',lat:18.5590,lng:73.8079},
+   {t:'14:19',cam:'Kothrud Depot Cam 5',lat:18.5074,lng:73.8077},
+   {t:'14:28',cam:'Swargate Junction',lat:18.5010,lng:73.8636},
+   {t:'14:40',cam:'Hadapsar Cam 4',lat:18.5089,lng:73.9260}
+ ]},
+ 'MH12DE4521':{flag:'clone',stops:[
+   {t:'14:02',cam:'FC Road Cam 2',lat:18.5236,lng:73.8478},
+   {t:'14:09',cam:'Hinjewadi Phase 1',lat:18.5912,lng:73.7389}
+ ]},
+ 'MH14GJ8830':{flag:'anomaly',stops:[
+   {t:'09:10',cam:'Kothrud Depot Cam 5',lat:18.5074,lng:73.8077},
+   {t:'09:25',cam:'Swargate Junction',lat:18.5010,lng:73.8636},
+   {t:'09:38',cam:'Hadapsar Cam 4',lat:18.5089,lng:73.9260}
+ ]}
+};
+function normPlate(s){return s.toUpperCase().replace(/\s+/g,'');}
+function haversineKm(a,b){
+  const R=6371,toRad=d=>d*Math.PI/180;
+  const dLat=toRad(b.lat-a.lat),dLng=toRad(b.lng-a.lng);
+  const x=Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+function toMin(t){const[h,m]=t.split(':').map(Number);return h*60+m;}
+let trajMarkers=[];
+let currentRoute=null; // {stops, path, cum, stopCum, distKm, spanMin, lineColor, roadBased}
+let vehicleMarker=null;
+let playAnimId=null;
+let playing=false;
+let routeToken=0;
+
+function setRouteData(id,coords){
+  if(!mapTraj.isStyleLoaded())return;
+  const s=mapTraj.getSource(id);
+  if(s)s.setData({type:'Feature',properties:{},geometry:{type:'LineString',coordinates:coords}});
+}
+function resetPlaybackUI(){
+  const btn=document.getElementById('playBtn');
+  btn.textContent='▶ Play';btn.disabled=false;
+  document.getElementById('progressFill').style.width='0%';
+  document.getElementById('progressPct').textContent='0%';
+  document.getElementById('progressStatus').textContent='Ready';
+  document.querySelectorAll('#trailList li').forEach(li=>li.classList.remove('active'));
+}
+function clearMap(){
+  trajMarkers.forEach(m=>m.remove()); trajMarkers=[];
+  if(vehicleMarker){vehicleMarker.remove();vehicleMarker=null;}
+  if(playAnimId){cancelAnimationFrame(playAnimId);playAnimId=null;}
+  playing=false;
+  resetPlaybackUI();
+  setRouteData('route',[]);
+  setRouteData('route-full',[]);
+}
+
+/* ---- real road path: OSRM routing (free public server, no API key) snaps the camera
+   stops to the road network and returns the actual driving geometry between them ---- */
+async function fetchRoadPath(stops){
+  const coords=stops.map(p=>p.lng+','+p.lat).join(';');
+  const url='https://router.project-osrm.org/route/v1/driving/'+coords+'?overview=full&geometries=geojson';
+  const res=await fetch(url);
+  if(!res.ok)throw new Error('routing '+res.status);
+  const data=await res.json();
+  if(data.code!=='Ok'||!data.routes||!data.routes.length)throw new Error('no route');
+  return data.routes[0].geometry.coordinates; // [[lng,lat],...]
+}
+function buildRouteModel(stops,path){
+  const pts=path.map(c=>({lng:c[0],lat:c[1]}));
+  const cum=[0];
+  for(let i=1;i<pts.length;i++)cum.push(cum[i-1]+haversineKm(pts[i-1],pts[i]));
+  const stopCum=[];let from=0;
+  stops.forEach((s,k)=>{
+    let best=from,bd=Infinity;
+    if(k===0)best=0;
+    else if(k===stops.length-1)best=pts.length-1;
+    else for(let i=from;i<pts.length;i++){const d=haversineKm(pts[i],s);if(d<bd){bd=d;best=i;}}
+    stopCum.push(cum[best]);from=best;
+  });
+  return{path,cum,stopCum,distKm:cum[cum.length-1]};
+}
+
+async function renderTrajectory(){
+  const key=normPlate(document.getElementById('plateInput').value||'');
+  const rec=plateTrajectories[key];
+  const list=document.getElementById('trailList');
+  const infoEl=document.getElementById('trajInfo');
+  const hintEl=document.getElementById('trailHint');
+  const btn=document.getElementById('playBtn');
+  const statusEl=document.getElementById('progressStatus');
+  const token=++routeToken;
+
+  clearMap();
+  currentRoute=null;
+
+  if(!rec){
+    list.innerHTML='<li style="color:var(--dim);">No matching detections in the last 24 hours for this plate.</li>';
+    hintEl.textContent='0 camera hits';
+    infoEl.innerHTML='Try MH12 AB 1234, MH12 DE 4521, or MH14 GJ 8830 — the only plates in this demo\'s dataset.';
+    return;
+  }
+  const stops=rec.stops;
+  const spanMin=toMin(stops[stops.length-1].t)-toMin(stops[0].t);
+  const lineColor=rec.flag==='clone'?'#DC2626':rec.flag==='anomaly'?'#D97706':'#2563EB';
+
+  const drawMarkers=()=>{
+    if(token!==routeToken)return;
+    if(mapTraj.getLayer('route-line')){
+      mapTraj.setPaintProperty('route-line','line-color',lineColor);
+      mapTraj.setPaintProperty('route-full','line-color',lineColor);
+    }
+    stops.forEach((p,i)=>{
+      const el=markerEl(String(i+1),lineColor);
+      el.addEventListener('click',()=>{infoEl.innerHTML=`<b>Stop ${i+1}: ${p.cam}</b> · ${p.t}`;});
+      trajMarkers.push(new maplibregl.Marker({element:el}).setLngLat([p.lng,p.lat]).addTo(mapTraj));
+    });
+    fitToCameras(mapTraj,stops);
+  };
+  if(mapTraj.isStyleLoaded()) drawMarkers(); else mapTraj.once('load',drawMarkers);
+
+  list.innerHTML='';
+  stops.forEach((p,i)=>{
+    const li=document.createElement('li');
+    li.id='trailStop'+i;
+    li.innerHTML=`<span class="t mono">${p.t}</span><span class="c">${p.cam}</span>`;
+    list.appendChild(li);
+  });
+  hintEl.textContent=`${stops.length} camera hits · ${spanMin} min span · finding road route…`;
+  infoEl.textContent='Snapping the trail to the real road network…';
+  btn.disabled=true;btn.textContent='Loading route…';statusEl.textContent='Fetching road path';
+
+  let path,roadBased=true;
+  try{ path=await fetchRoadPath(stops); }
+  catch(e){ roadBased=false; path=stops.map(p=>[p.lng,p.lat]); }
+  if(token!==routeToken)return; // user traced another plate meanwhile
+
+  const model=buildRouteModel(stops,path);
+  currentRoute=Object.assign({stops,spanMin,lineColor,roadBased},model);
+
+  const showRoute=()=>{
+    if(token!==routeToken)return;
+    setRouteData('route-full',path);
+    fitToCameras(mapTraj,path.map(c=>({lng:c[0],lat:c[1]})));
+  };
+  if(mapTraj.isStyleLoaded()) showRoute(); else mapTraj.once('load',showRoute);
+
+  hintEl.textContent=`${stops.length} camera hits · ${spanMin} min span · ${model.distKm.toFixed(1)} km ${roadBased?'by road':'(straight-line fallback)'}`;
+  btn.disabled=false;btn.textContent='▶ Play';
+  statusEl.textContent=roadBased?'Ready':'Ready (routing unavailable, straight lines)';
+
+  if(rec.flag==='clone'){
+    const kmh=Math.round(model.distKm/(spanMin/60));
+    infoEl.innerHTML=`<b style="color:var(--red)">⚠ Impossible trajectory:</b> ${model.distKm.toFixed(1)} km in ${spanMin} min requires ~${kmh} km/h — flagged as a likely cloned plate.`;
+  } else if(rec.flag==='anomaly'){
+    infoEl.innerHTML=`<b style="color:var(--amber)">⚠ Route anomaly:</b> this path deviates from the vehicle's 30-day historical pattern.`;
+  } else {
+    infoEl.textContent='Click a stop marker for camera + timestamp.';
+  }
+}
+mapTraj.on('load',renderTrajectory);
+
+// ---- animated playback: drives a marker along the real road geometry ----
+function pointAtDistance(r,d){
+  let lo=0,hi=r.cum.length-1;
+  while(lo<hi-1){const mid=(lo+hi)>>1; if(r.cum[mid]<=d)lo=mid; else hi=mid;}
+  const seg=r.cum[hi]-r.cum[lo];
+  const t=seg>0?Math.min(Math.max((d-r.cum[lo])/seg,0),1):0;
+  const a=r.path[lo],b=r.path[hi];
+  return{lng:a[0]+(b[0]-a[0])*t,lat:a[1]+(b[1]-a[1])*t,idx:lo};
+}
+function playTrajectory(){
+  if(!currentRoute||playing)return;
+  playing=true;
+  const r=currentRoute;
+  const btn=document.getElementById('playBtn');
+  btn.disabled=true;
+  document.getElementById('progressStatus').textContent='Playing';
+  document.querySelectorAll('#trailList li').forEach(li=>li.classList.remove('active'));
+
+  if(vehicleMarker)vehicleMarker.remove();
+  const el=document.createElement('div');
+  el.className='veh-marker';
+  vehicleMarker=new maplibregl.Marker({element:el}).setLngLat(r.path[0]).addTo(mapTraj);
+
+  const DURATION_MS=Math.min(14000,Math.max(6000,r.distKm*450));
+  const startTime=performance.now();
+  let nextStop=0;
+  function frame(now){
+    const f=Math.min((now-startTime)/DURATION_MS,1);
+    const d=f*r.distKm;
+    const p=pointAtDistance(r,d);
+    vehicleMarker.setLngLat([p.lng,p.lat]);
+    setRouteData('route',r.path.slice(0,p.idx+1).concat([[p.lng,p.lat]]));
+
+    while(nextStop<r.stops.length && r.stopCum[nextStop]<=d+1e-9){
+      document.getElementById('trailStop'+nextStop)?.classList.add('active');
+      nextStop++;
+    }
+    const pct=Math.round(f*100);
+    document.getElementById('progressFill').style.width=pct+'%';
+    document.getElementById('progressPct').textContent=pct+'%';
+
+    if(f<1){
+      playAnimId=requestAnimationFrame(frame);
+    }else{
+      document.getElementById('trailStop'+(r.stops.length-1))?.classList.add('active');
+      document.getElementById('progressStatus').textContent='Complete';
+      btn.disabled=false;btn.textContent='↻ Replay';
+      playing=false;
+    }
+  }
+  playAnimId=requestAnimationFrame(frame);
+}
+document.getElementById('playBtn').addEventListener('click',()=>{
+  const btn=document.getElementById('playBtn');
+  if(btn.textContent.includes('Replay')){
+    if(vehicleMarker){vehicleMarker.remove();vehicleMarker=null;}
+    setRouteData('route',[]);
+    resetPlaybackUI();
+  }
+  playTrajectory();
+});
+
+const roads=['FC Road','Kothrud Depot Rd','JM Road','Ring Road (W)','Karve Road'];
+const scenarios={
+  none:{hint:'Baseline — current sensor readings',vals:[72,58,64,40,55]},
+  close:{hint:'FC Road closed 12:00–16:00 — traffic redistributes to JM Road & Shivajinagar link',vals:[6,58,89,52,71]},
+  signal:{hint:'Adaptive signal at Kothrud Depot — smooths peak-hour queuing',vals:[70,34,62,41,53]},
+  divert:{hint:'Heavy vehicles diverted to Ring Road — arterial roads decongest',vals:[66,55,58,81,49]}
+};
+function setSim(key){
+  document.querySelectorAll('.sim-btn').forEach(b=>b.classList.toggle('on',b.dataset.sim===key));
+  document.getElementById('simHint').textContent=scenarios[key].hint;
+  const wrap=document.getElementById('simBars');
+  wrap.innerHTML='';
+  roads.forEach((r,i)=>{
+    const v=scenarios[key].vals[i];
+    const color=v>75?'var(--red)':v>55?'var(--amber)':'var(--accent)';
+    const row=document.createElement('div');
+    row.className='bar-row';
+    row.innerHTML=`<div class="bar-row-top"><span>${r}</span><b>${v}% capacity</b></div><div class="bar-bg"><div class="bar-fill" style="width:${v}%;background:${color}"></div></div>`;
+    wrap.appendChild(row);
+  });
+}
+setSim('none');
+
+</script>
+</body>
+</html>
